@@ -1,0 +1,35 @@
+{
+  "entities": {
+    "users": {
+      "title": "User",
+      "description": "User profile records",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "uid": {
+          "type": "string"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "photoURL": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "lastLoginAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "uid",
+        "email"
+      ]
+    }
+  }
+}
