@@ -82,16 +82,16 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Proprietary VYORA AI Engine Badge & Mode Toggle */}
         <div className="flex items-center gap-2">
-          {/* Proprietary Core Pill */}
+          {/* VYORA AI Engine Core Pill */}
           <div className="flex items-center gap-2 bg-[#171925] border border-white/10 rounded-lg px-2.5 py-1 text-xs shadow-sm">
             <div className="flex items-center gap-1.5 text-[#22D3EE] font-semibold">
               <Sparkles className="w-3.5 h-3.5 text-[#22D3EE]" />
-              <span>VYORA AI</span>
+              <span>VYORA Neural Core</span>
             </div>
             <span className="text-white/20">|</span>
             <div className="flex items-center gap-1.5 text-[11px] text-emerald-400 font-medium">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span>Neural Core Active</span>
+              <span>High Speed Active</span>
             </div>
           </div>
 

@@ -69,6 +69,15 @@ export default function App() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [geminiConnected, setGeminiConnected] = useState(true);
   const [totalTokensUsed, setTotalTokensUsed] = useState<number>(1420);
+  const abortControllerRef = React.useRef<AbortController | null>(null);
+
+  const handleStopGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsGenerating(false);
+  };
 
   // Check backend server health on mount
   useEffect(() => {
@@ -139,7 +148,7 @@ export default function App() {
     }
   };
 
-  // Send Message with Adaptive Routing, Search Grounding, and Memory
+  // Send Message with Adaptive Routing, Search Grounding, and Memory (Streaming supported)
   const handleSendMessage = async (
     text: string,
     options: { webSearch: boolean; documentId?: string }
@@ -162,17 +171,6 @@ export default function App() {
     const updatedMessages = [...activeConversation.messages, userMessage];
     const currentConvId = activeConversation.id;
 
-    const interimConv: Conversation = {
-      ...activeConversation,
-      title: updatedTitle,
-      messages: updatedMessages,
-      updatedAt: new Date().toISOString(),
-    };
-
-    StorageService.upsertConversation(interimConv);
-    setConversations(StorageService.getConversations());
-    setIsGenerating(true);
-
     // Format approved memory context if enabled
     let memoryContext = '';
     if (settings.memoryEnabled) {
@@ -189,15 +187,48 @@ export default function App() {
       }
     }
 
+    const assistantMsgId = `msg-${Date.now() + 1}`;
+    let accumulatedContent = '';
+    let citations: any[] = [];
+    let modelUsed = 'vyora-neural-core';
+    let taskCategory: any = 'GENERAL_CHAT';
+    let routingDecision: any = undefined;
+    let tokens: any = undefined;
+
+    // Initial placeholder assistant message for immediate real-time response feedback
+    const placeholderAssistantMsg: ChatMessage = {
+      id: assistantMsgId,
+      role: 'assistant',
+      content: '',
+      timestamp: new Date().toISOString(),
+      modelUsed: 'vyora-neural-core',
+    };
+
+    const streamingConv: Conversation = {
+      ...activeConversation,
+      title: updatedTitle,
+      messages: [...updatedMessages, placeholderAssistantMsg],
+      updatedAt: new Date().toISOString(),
+    };
+
+    StorageService.upsertConversation(streamingConv);
+    setConversations(StorageService.getConversations());
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    setIsGenerating(true);
+
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           messages: updatedMessages,
           modelId: selectedModelId,
           autoRoute: autoRouting,
           webSearch: options.webSearch || settings.webSearchDefault,
+          stream: true,
           documentContext,
           memoryContext,
         }),
@@ -207,50 +238,125 @@ export default function App() {
         throw new Error(`Chat API responded with status ${res.status}`);
       }
 
-      const data = await res.json();
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('text/event-stream') && res.body) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
 
-      const assistantMessage: ChatMessage = {
-        id: `msg-${Date.now() + 1}`,
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith('data: ')) {
+              try {
+                const payload = JSON.parse(trimmed.slice(6));
+                if (payload.type === 'chunk') {
+                  accumulatedContent += payload.text;
+                  setConversations((prev) =>
+                    prev.map((c) => {
+                      if (c.id !== currentConvId) return c;
+                      const msgs = [...c.messages];
+                      const lastMsg = msgs[msgs.length - 1];
+                      if (lastMsg && lastMsg.id === assistantMsgId) {
+                        lastMsg.content = accumulatedContent;
+                      }
+                      return { ...c, messages: msgs };
+                    })
+                  );
+                } else if (payload.type === 'done') {
+                  accumulatedContent = payload.content || accumulatedContent;
+                  if (payload.citations) citations = payload.citations;
+                  if (payload.modelUsed) modelUsed = payload.modelUsed;
+                  if (payload.taskCategory) taskCategory = payload.taskCategory;
+                  if (payload.routingDecision) routingDecision = payload.routingDecision;
+                  if (payload.tokens) tokens = payload.tokens;
+                }
+              } catch {
+                // Ignore parse errors on individual stream chunks
+              }
+            }
+          }
+        }
+      } else {
+        const data = await res.json();
+        accumulatedContent = data.content || '';
+        citations = data.citations || [];
+        modelUsed = data.modelUsed || 'vyora-neural-core';
+        taskCategory = data.taskCategory;
+        routingDecision = data.routingDecision;
+        tokens = data.tokens;
+      }
+
+      const finalAssistantMessage: ChatMessage = {
+        id: assistantMsgId,
         role: 'assistant',
-        content: data.content || 'Response generated.',
+        content: accumulatedContent || 'Response generated.',
         timestamp: new Date().toISOString(),
-        modelUsed: data.modelUsed,
-        taskCategory: data.taskCategory,
-        routingDecision: data.routingDecision,
-        citations: data.citations || [],
-        tokens: data.tokens,
+        modelUsed,
+        taskCategory,
+        routingDecision,
+        citations,
+        tokens,
       };
 
       const finalConv: Conversation = {
-        ...interimConv,
-        messages: [...updatedMessages, assistantMessage],
+        ...streamingConv,
+        messages: [...updatedMessages, finalAssistantMessage],
         updatedAt: new Date().toISOString(),
       };
 
       StorageService.upsertConversation(finalConv);
       setConversations(StorageService.getConversations());
 
-      if (data.tokens) {
-        setTotalTokensUsed((prev) => prev + (data.tokens.input + data.tokens.output));
+      if (tokens) {
+        setTotalTokensUsed((prev) => prev + (tokens.input + tokens.output));
       }
     } catch (err: any) {
+      if (err.name === 'AbortError') {
+        const stoppedMsg: ChatMessage = {
+          id: assistantMsgId,
+          role: 'assistant',
+          content: accumulatedContent
+            ? accumulatedContent + '\n\n*(Generation stopped by user)*'
+            : '*(Generation stopped)*',
+          timestamp: new Date().toISOString(),
+          modelUsed,
+        };
+        const stoppedConv: Conversation = {
+          ...streamingConv,
+          messages: [...updatedMessages, stoppedMsg],
+          updatedAt: new Date().toISOString(),
+        };
+        StorageService.upsertConversation(stoppedConv);
+        setConversations(StorageService.getConversations());
+        return;
+      }
+
       console.error('Error generating chat message:', err);
       const errorMessage: ChatMessage = {
-        id: `msg-${Date.now() + 1}`,
+        id: assistantMsgId,
         role: 'assistant',
-        content: `**VYORA Notice:** Could not complete request (${err.message || 'Network error'}). If running locally, please ensure GEMINI_API_KEY is configured in Secrets or your .env file.`,
+        content: `**VYORA Notice:** Could not complete request (${err.message || 'Network error'}). Please try again.`,
         timestamp: new Date().toISOString(),
         modelUsed: selectedModelId,
       };
 
       const finalConv: Conversation = {
-        ...interimConv,
+        ...streamingConv,
         messages: [...updatedMessages, errorMessage],
         updatedAt: new Date().toISOString(),
       };
       StorageService.upsertConversation(finalConv);
       setConversations(StorageService.getConversations());
     } finally {
+      abortControllerRef.current = null;
       setIsGenerating(false);
     }
   };
@@ -537,7 +643,7 @@ export default function App() {
                   onSendMessage={handleSendMessage}
                   onRegenerateResponse={handleRegenerateResponse}
                   isGenerating={isGenerating}
-                  onStopGeneration={() => setIsGenerating(false)}
+                  onStopGeneration={handleStopGeneration}
                   documents={documents}
                   memories={memories}
                   autoRouting={autoRouting}

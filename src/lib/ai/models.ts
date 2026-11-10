@@ -1,4 +1,4 @@
-import { AIModel } from '../../types';
+import type { AIModel } from '../../types/index.ts';
 
 export const MODEL_REGISTRY: AIModel[] = [
   {

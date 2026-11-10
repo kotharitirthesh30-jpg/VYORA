@@ -115,8 +115,9 @@ export const ChatView: React.FC<ChatViewProps> = ({
               </span>
             </div>
           )}
-          <span className="hidden sm:inline text-[11px] text-[#999BAE]">
-            {autoRouting ? '⚡ Adaptive Intelligence active' : '⚡ VYORA Core Engine active'}
+          <span className="hidden sm:inline-flex items-center gap-1.5 text-[11px] text-[#22D3EE] bg-[#22D3EE]/10 px-2 py-0.5 rounded border border-[#22D3EE]/20">
+            <Sparkles className="w-3 h-3 text-[#22D3EE]" />
+            <span>VYORA Neural Core Active</span>
           </span>
         </div>
       </div>
@@ -200,8 +201,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
                 }`}
               >
                 {!isUser && (
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-[#171925] to-[#10111A] border border-white/10 flex items-center justify-center shrink-0 text-[#22D3EE] shadow-sm">
-                    <Sparkles className="w-4 h-4 text-[#8B5CF6]" />
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-[#171925] to-[#10111A] border border-[#22D3EE]/20 flex items-center justify-center shrink-0 text-[#22D3EE] shadow-sm">
+                    <Sparkles className="w-4 h-4 text-[#22D3EE]" />
                   </div>
                 )}
 
@@ -218,7 +219,30 @@ export const ChatView: React.FC<ChatViewProps> = ({
                       <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
                     ) : (
                       <>
-                        <MarkdownRenderer content={message.content} />
+                        {message.content ? (
+                          <>
+                            <MarkdownRenderer content={message.content} />
+                            {isLatestAssistant && isGenerating && (
+                              <span className="inline-block w-2 h-4 ml-1 bg-[#22D3EE] animate-pulse align-middle" />
+                            )}
+                          </>
+                        ) : isLatestAssistant && isGenerating ? (
+                          <div className="flex items-center gap-2.5 text-xs py-1">
+                            <span className="w-2.5 h-2.5 rounded-full bg-[#22D3EE] animate-pulse shrink-0" />
+                            <span className="text-white font-medium">VYORA is thinking...</span>
+                            {onStopGeneration && (
+                              <button
+                                onClick={onStopGeneration}
+                                className="ml-3 px-2 py-0.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 rounded text-[11px] flex items-center gap-1 border border-rose-500/30 transition-colors"
+                              >
+                                <Square className="w-2.5 h-2.5 fill-current" />
+                                <span>Stop</span>
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-[#999BAE] italic">Empty response</p>
+                        )}
 
                         {/* Verified Grounding Citations */}
                         {message.citations && message.citations.length > 0 && (
@@ -277,7 +301,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
                         </span>
                       )}
 
-                      {!isUser && (
+                      {!isUser && message.content && (
                         <>
                           <button
                             onClick={() => handleCopyMessage(message.id, message.content)}
@@ -291,7 +315,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
                             )}
                           </button>
 
-                          {isLatestAssistant && (
+                          {isLatestAssistant && !isGenerating && (
                             <button
                               onClick={() => onRegenerateResponse(index)}
                               aria-label="Regenerate response"
@@ -328,28 +352,6 @@ export const ChatView: React.FC<ChatViewProps> = ({
               </div>
             );
           })
-        )}
-
-        {/* Live Generation Indicator */}
-        {isGenerating && (
-          <div className="flex gap-3 max-w-4xl mx-auto justify-start">
-            <div className="w-8 h-8 rounded-lg bg-[#171925] border border-white/10 flex items-center justify-center shrink-0">
-              <Sparkles className="w-4 h-4 text-[#22D3EE] animate-spin" />
-            </div>
-            <div className="bg-[#171925] border border-white/10 rounded-2xl rounded-bl-sm px-4 py-3 text-xs text-[#999BAE] flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-[#22D3EE] animate-pulse" />
-              <span>Generating response with VYORA Neural Core...</span>
-              {onStopGeneration && (
-                <button
-                  onClick={onStopGeneration}
-                  className="ml-3 px-2 py-0.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 rounded text-[11px] flex items-center gap-1"
-                >
-                  <Square className="w-2.5 h-2.5 fill-current" />
-                  <span>Stop</span>
-                </button>
-              )}
-            </div>
-          </div>
         )}
 
         <div ref={messagesEndRef} />
@@ -417,18 +419,30 @@ export const ChatView: React.FC<ChatViewProps> = ({
               aria-label="Message input"
             />
 
-            <button
-              type="submit"
-              disabled={!inputText.trim() || isGenerating}
-              aria-label="Send message"
-              className={`p-2 rounded-lg transition-all ml-2 ${
-                inputText.trim() && !isGenerating
-                  ? 'bg-gradient-to-r from-[#8B5CF6] to-[#7C3AED] text-white shadow-md hover:opacity-90'
-                  : 'bg-white/5 text-[#999BAE] cursor-not-allowed opacity-50'
-              }`}
-            >
-              <Send className="w-4 h-4" />
-            </button>
+            {isGenerating ? (
+              <button
+                type="button"
+                onClick={onStopGeneration}
+                aria-label="Stop generating response"
+                className="p-2 rounded-lg bg-rose-500 hover:bg-rose-600 text-white transition-all ml-2 shadow-md flex items-center justify-center gap-1 shrink-0"
+                title="Stop response generation"
+              >
+                <Square className="w-3.5 h-3.5 fill-current" />
+              </button>
+            ) : (
+              <button
+                type="submit"
+                disabled={!inputText.trim()}
+                aria-label="Send message"
+                className={`p-2 rounded-lg transition-all ml-2 shrink-0 ${
+                  inputText.trim()
+                    ? 'bg-gradient-to-r from-[#8B5CF6] to-[#7C3AED] text-white shadow-md hover:opacity-90 active:scale-95'
+                    : 'bg-white/5 text-[#999BAE] cursor-not-allowed opacity-50'
+                }`}
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </form>
       </div>

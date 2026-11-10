@@ -1,5 +1,5 @@
-import { TaskCategory } from '../../types';
-import { MODEL_REGISTRY, DEFAULT_MODEL_ID } from './models';
+import type { TaskCategory } from '../../types/index.ts';
+import { MODEL_REGISTRY, DEFAULT_MODEL_ID } from './models.ts';
 
 export interface RoutingDecision {
   category: TaskCategory;
